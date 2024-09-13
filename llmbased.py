@@ -5,6 +5,16 @@ from io import BytesIO
 import pytesseract
 import re
 import pandas as pd
+from PIL import Image
+import torch
+from transformers import AutoModel, AutoTokenizer
+
+model = AutoModel.from_pretrained('openbmb/MiniCPM-Llama3-V-2_5', trust_remote_code=True, torch_dtype=torch.float16)
+model = model.to(device='cuda')
+
+tokenizer = AutoTokenizer.from_pretrained('openbmb/MiniCPM-Llama3-V-2_5', trust_remote_code=True)
+model.eval()
+
 
 count = 0
 pytesseract.pytesseract.tesseract_cmd = r'C:/Program Files/Tesseract-OCR/tesseract.exe'
@@ -20,16 +30,22 @@ def extract_text_from_image(image):
 
 def predictor(image_link, category_id, entity_name):
     global count
-    '''
-    Function to download the image, extract text using OCR, and find the relevant entity value.
-    '''
     try:
         image = download_image(image_link)
-        extracted_text = extract_text_from_image(image)
+        image = Image.open(image).convert('RGB')
+        question = f'What is {entity_name} in the image?, reply with units aswell'
+        msgs = [{'role': 'user', 'content': question}]
+        res = model.chat(
+            image=image,
+            msgs=msgs,
+            tokenizer=tokenizer,
+            sampling=True, 
+            temperature=0.7,
+      
+        )
+        print([(category_id),(entity_name),(res['content'])])
 
         count+=1
-     
-        print([(count),(extracted_text)])
         return ""
     except Exception as e:
         print(f"Error processing {image_link}: {e}")
