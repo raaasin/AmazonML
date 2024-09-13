@@ -8,9 +8,13 @@ import pandas as pd
 import torch
 import warnings
 from fuzzywuzzy import fuzz
+import cv2
+import numpy as np
+from PIL import ImageEnhance
+from textblob import TextBlob
 warnings.filterwarnings("ignore")
-
 print(torch.cuda.is_available())
+
 reader = easyocr.Reader(['en'], gpu=True)
 
 def download_image(image_url):
@@ -18,72 +22,135 @@ def download_image(image_url):
     img = Image.open(BytesIO(response.content))
     return img
 
+def preprocess_image(image):
+    image_np = np.array(image)
+    if len(image_np.shape) == 3 and image_np.shape[2] == 3:
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+    elif len(image_np.shape) == 2:
+        gray = image_np
+    else:
+        raise ValueError("Unsupported image format")
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    
+    return binary
+
+def correct_spelling(text):
+    blob = TextBlob(text)
+    return str(blob.correct())
+
 def extract_text_from_image(image):
-    text = reader.readtext(image, detail=0, text_threshold=0.1)
-    return ' '.join(text)
+    processed_image = preprocess_image(image)
+    processed_image_np = np.array(processed_image)
+    text = reader.readtext(processed_image_np, detail=0, text_threshold=0.6)
+    extracted_text = ' '.join(text)
+    corrected_text = correct_spelling(extracted_text)
+    
+    return corrected_text
 
-from fuzzywuzzy import fuzz
-
-from fuzzywuzzy import fuzz
-
+def remove(value):
+    if value.endswith('.'):
+        return value[:-1]
+    return value
 def process_text(entity_name, extracted_text):
-    # Define allowed units for each entity type with common abbreviations
+
     ALLOWED_UNITS = {
-        'item_weight': ['gram', 'kilogram', 'milligram', 'ounce', 'pound'],
-        'item_volume': ['milliliter', 'liter', 'cup', 'fluid ounce', 'gallon'],
-        'height': ['centimetre', 'inch', 'millimetre', 'metre'],
-        'width': ['centimetre', 'inch', 'millimetre', 'metre'],
-        'depth': ['centimetre', 'inch', 'millimetre', 'metre'],
+    'width': {'centimetre', 'foot', 'inch', 'metre', 'millimetre', 'yard'},
+    'depth': {'centimetre', 'foot', 'inch', 'metre', 'millimetre', 'yard'},
+    'height': {'centimetre', 'foot', 'inch', 'metre', 'millimetre', 'yard'},
+    'item_weight': {
+        'gram', 'kilogram', 'microgram', 'milligram', 'ounce', 'pound', 'ton'
+    },
+    'maximum_weight_recommendation': {
+        'gram', 'kilogram', 'microgram', 'milligram', 'ounce', 'pound', 'ton'
+    },
+    'voltage': {'kilovolt', 'millivolt', 'volt'},
+    'wattage': {'kilowatt', 'watt'},
+    'item_volume': {
+        'centilitre', 'cubic foot', 'cubic inch', 'cup', 'decilitre', 'fluid ounce',
+        'gallon', 'imperial gallon', 'litre', 'microlitre', 'millilitre', 'pint', 'quart'
     }
+}
     
-    # Define abbreviations and symbols to their corresponding full unit names
-    UNIT_CORRECTIONS = {
-        'g': 'gram',
-        'kg': 'kilogram',
-        'mg': 'milligram',
-        'oz': 'ounce',
-        'lb': 'pound',
-        'ml': 'milliliter',
-        'l': 'liter',
-        'ltr': 'liter',
-        'fl oz': 'fluid ounce',
-        '"': 'inch',
-        '""': 'inch',
-        'cm': 'centimetre',
-        'mm': 'millimetre',
-        'm': 'metre',
-    }
-    
-    # Replace common abbreviations and symbols in the extracted text
+
+    UNIT_CORRECTIONS = UNIT_CORRECTIONS = {
+    'g': 'gram',
+    'gr': 'gram',
+    'gm': 'gram',
+    'kg': 'kilogram',
+    'kgs': 'kilogram',
+    'mg': 'milligram',
+    'mgs': 'milligram',
+    'μg': 'microgram',  
+    'mcg': 'microgram', 
+    'oz': 'ounce',
+    'lb': 'pound',
+    'lbs': 'pound',
+    'ton': 'ton',
+    'ml': 'millilitre',
+    'mL': 'millilitre',
+    'microl': 'microlitre',
+    'litre': 'litre',
+    'liter': 'litre', 
+    'l': 'litre',
+    'ltr': 'litre',
+    'cl': 'centilitre',
+    'dl': 'decilitre',
+    'fl oz': 'fluid ounce',
+    'fluid ounce': 'fluid ounce',
+    'gal': 'gallon',
+    'imperial gallon': 'imperial gallon',
+    'cup': 'cup',
+    'pint': 'pint',
+    'qt': 'quart',
+    'quart': 'quart',
+    'cubic foot': 'cubic foot',
+    'cubic inch': 'cubic inch',
+    '"': 'inch',
+    'inches': 'inch',
+    'in': 'inch',
+    'cm': 'centimetre',
+    'centimetre': 'centimetre',
+    'centimeter': 'centimetre',
+    'mm': 'millimetre',
+    'millimetre': 'millimetre',
+    'millimeter': 'millimetre',
+    'm': 'metre',
+    'meter': 'metre',
+    'metre': 'metre',
+    'ft': 'foot',
+    'feet': 'foot',
+    'yd': 'yard',
+    'yards': 'yard',
+    'v': 'volt',
+    'volt': 'volt',
+    'kv': 'kilovolt',
+    'mv': 'millivolt',
+    'w': 'watt',
+    'watt': 'watt',
+    'kw': 'kilowatt',
+    'sq ft': 'cubic foot',  
+    'sq in': 'cubic inch',
+}
+
     for abbr, full_unit in UNIT_CORRECTIONS.items():
         extracted_text = re.sub(r'\b' + abbr + r'\b', full_unit, extracted_text)
-
-    # Extract numbers from text
     numbers = re.findall(r'\d+\.?\d*', extracted_text)
-    
-    # Check if any allowed unit for the entity is present in the extracted text
+
     units = re.findall(r'\b(?:' + '|'.join(ALLOWED_UNITS[entity_name]) + r')\b', extracted_text.lower())
 
-    # If exact unit matches are found
     if numbers and units:
         value = numbers[0]
         unit = units[0]
-        return f"{value} {unit}"
-    
-    # If no exact match for the unit, try fuzzy matching
+        return f"{remove(value)} {unit}"
     extracted_words = re.findall(r'\b\w+\b', extracted_text.lower())
     for word in extracted_words:
         best_match, best_score = "", 0
         for allowed_unit in ALLOWED_UNITS[entity_name]:
             score = fuzz.ratio(word, allowed_unit)
-            if score > best_score and score > 75:  # Threshold for similarity
+            if score > best_score and score > 50: 
                 best_match, best_score = allowed_unit, score
-        
-        # If a fuzzy match is found for the unit
         if best_match:
-            return f"{numbers[0]} {best_match}" if numbers else ""
-
-    # If no match, return empty
+            return f"{remove(numbers[0])} {best_match}" if numbers else ""
     return ""
 
 
