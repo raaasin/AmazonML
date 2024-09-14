@@ -133,7 +133,7 @@ if __name__ == "__main__":
                 results.append(result)
             pbar.update(1)
     
-    results_df = pd.DataFrame(results, columns=['index', 'entity_value'])
+    results_df = pd.DataFrame(results, columns=['index', 'prediction'])
     output_filename = 'final_out.csv'
     results_df.to_csv(output_filename, index=False)
     print("Processing complete. Results saved to", output_filename)
