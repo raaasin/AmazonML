@@ -17,16 +17,8 @@ def get_image_filename(image_url):
 
 def open_image(image_url):
     file_path = get_image_filename(image_url)
-    if os.path.exists(file_path):
-        try:
-            img = Image.open(file_path)
-            return img
-        except Exception as e:
-            print(f"Error opening image {file_path}: {e}")
-            return ""
-    else:
-        print(f"Image file not found: {file_path}")
-        return ""
+    img = Image.open(file_path)
+    return img
 
 def extract_text_from_image(image):
     try:
@@ -34,7 +26,6 @@ def extract_text_from_image(image):
         return ' '.join(text)
     except Exception as e:
         return ""
-
 
 def predictor(image_link, category_id, entity_name):
     global count
@@ -52,5 +43,5 @@ if __name__ == "__main__":
     test = pd.read_csv(os.path.join(DATASET_FOLDER, 'test.csv')) 
     test['prediction'] = test.apply(
         lambda row: predictor(row['image_link'], row['group_id'], row['entity_name']), axis=1) 
-    output_filename = os.path.join(DATASET_FOLDER, 'test_out.csv')
+    output_filename = 'test_out.csv'
     test[['index', 'prediction']].to_csv(output_filename, index=False)
