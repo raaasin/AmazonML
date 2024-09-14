@@ -4,6 +4,7 @@ import urllib.parse
 import easyocr
 import pandas as pd
 import torch
+import numpy as np
 from tqdm import tqdm
 import warnings
 warnings.filterwarnings("ignore")
@@ -17,10 +18,10 @@ def get_image_filename(image_url):
     filename = os.path.basename(path)
     return os.path.join(output_folder, filename)
 
-def open_image(image_url):
-    file_path = get_image_filename(image_url)
+def open_image(file_path):
     try:
-        img = Image.open(file_path)
+        img = Image.open(file_path).convert('RGB')  # Ensure image is in RGB format
+        img = img.resize((img.width // 2, img.height // 2))  # Resize for faster processing
         return img
     except Exception as e:
         print(f"Error opening image {file_path}: {e}")
@@ -28,7 +29,9 @@ def open_image(image_url):
 
 def extract_text_from_image(image):
     try:
-        text = reader.readtext(image, detail=0, text_threshold=0.6)
+        image_np = np.array(image)  # Convert PIL image to numpy array
+        # Adjust easyocr parameters for faster processing
+        text = reader.readtext(image_np, detail=0, text_threshold=0.4)
         return ' '.join(text)
     except Exception as e:
         print(f"Error extracting text: {e}")
@@ -39,8 +42,9 @@ def process_image(row):
     image_link = row['image_link']
     group_id = row['group_id']
     entity_name = row['entity_name']
+    file_path = get_image_filename(image_link)
     try:
-        image = open_image(image_link)
+        image = open_image(file_path)
         if image is not None:
             extracted_text = extract_text_from_image(image)
             return (index, entity_name, group_id, extracted_text)
