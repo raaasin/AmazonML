@@ -10,8 +10,10 @@ import warnings
 from fuzzywuzzy import fuzz
 import cv2
 import numpy as np
-from PIL import ImageEnhance
-from textblob import TextBlob
+from tqdm import tqdm  
+import signal
+import sys
+from multiprocessing import Pool 
 warnings.filterwarnings("ignore")
 print(torch.cuda.is_available())
 
@@ -34,18 +36,14 @@ def preprocess_image(image):
     
     return binary
 
-def correct_spelling(text):
-    blob = TextBlob(text)
-    return str(blob.correct())
 
 def extract_text_from_image(image):
     processed_image = preprocess_image(image)
     processed_image_np = np.array(processed_image)
-    text = reader.readtext(processed_image_np, detail=0, text_threshold=0.6)
+    text = reader.readtext(processed_image_np, detail=0,)
     extracted_text = ' '.join(text)
-    corrected_text = correct_spelling(extracted_text)
     
-    return corrected_text
+    return extracted_text
 
 def remove(value):
     if value.endswith('.'):
@@ -155,20 +153,34 @@ def process_text(entity_name, extracted_text):
 
 
 
-def predictor(image_link, category_id, entity_name):
+def predictor(row_tuple):
+    index, row = row_tuple  # Unpack the tuple
+    image_link, category_id, entity_name = row['image_link'], row['group_id'], row['entity_name']
     try:
         image = download_image(image_link)
         extracted_text = extract_text_from_image(image)
         processed_text = process_text(entity_name, extracted_text)
-        print([(category_id), (entity_name), (processed_text)])
         return processed_text
     except Exception as e:
         print(f"Error processing {image_link}: {e}")
         return ""
 
+def save_progress(df, output_filename):
+    df.to_csv(output_filename, index=False)
+    print(f"Progress saved to {output_filename}")
+
+def signal_handler(sig, frame, df, output_filename):
+    print("\nProgram interrupted! Saving progress...")
+    save_progress(df, output_filename)
+    sys.exit(0)
+
 if __name__ == "__main__":
     DATASET_FOLDER = 'dataset/'
-    test = pd.read_csv(os.path.join(DATASET_FOLDER, 'test.csv'))
-    test['prediction'] = test.apply(lambda row: predictor(row['image_link'], row['group_id'], row['entity_name']), axis=1)
     output_filename = os.path.join(DATASET_FOLDER, 'test_out.csv')
-    test[['index', 'prediction']].to_csv(output_filename, index=False)
+    test = pd.read_csv(os.path.join(DATASET_FOLDER, 'test.csv'))
+
+    signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, test, output_filename)) 
+    with Pool(processes=2) as pool:  # Adjust `processes` based on the number of CPU cores
+        test['prediction'] = list(tqdm(pool.imap(predictor, test.iterrows()), total=len(test)))
+
+    save_progress(test[['index', 'prediction']], output_filename)
