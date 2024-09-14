@@ -20,11 +20,16 @@ print(torch.cuda.is_available())
 reader = easyocr.Reader(['en'], gpu=True)
 
 def download_image(image_url):
-    response = requests.get(image_url)
-    img = Image.open(BytesIO(response.content))
-    return img
+    try:
+        response = requests.get(image_url)  # Set a timeout to avoid long waits on bad connections
+        img = Image.open(BytesIO(response.content))
+        return img
+    except Exception as e:
+        print(f"Failed to download image: {e}")
+        return None
 
 def preprocess_image(image):
+    """Optimized image preprocessing using faster techniques."""
     image_np = np.array(image)
     if len(image_np.shape) == 3 and image_np.shape[2] == 3:
         gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
@@ -32,17 +37,19 @@ def preprocess_image(image):
         gray = image_np
     else:
         raise ValueError("Unsupported image format")
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    
+
+    # Use faster denoising and thresholding techniques
+    gray = cv2.fastNlMeansDenoising(gray, None, h=7, templateWindowSize=7)  # Denoising for clearer text
+    _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)  # Fast adaptive thresholding
+
     return binary
 
 
 def extract_text_from_image(image):
     processed_image = preprocess_image(image)
     processed_image_np = np.array(processed_image)
-    text = reader.readtext(processed_image_np, detail=0,)
+    text = reader.readtext(processed_image_np, detail=0)
     extracted_text = ' '.join(text)
-    
     return extracted_text
 
 def remove(value):
@@ -160,6 +167,7 @@ def predictor(row_tuple):
         image = download_image(image_link)
         extracted_text = extract_text_from_image(image)
         processed_text = process_text(entity_name, extracted_text)
+        print(f"{index}, {image_link}, {entity_name}, {processed_text}")
         return processed_text
     except Exception as e:
         print(f"Error processing {image_link}: {e}")
@@ -169,17 +177,13 @@ def save_progress(df, output_filename):
     df.to_csv(output_filename, index=False)
     print(f"Progress saved to {output_filename}")
 
-def signal_handler(sig, frame, df, output_filename):
-    print("\nProgram interrupted! Saving progress...")
-    save_progress(df, output_filename)
-    sys.exit(0)
+
 
 if __name__ == "__main__":
     DATASET_FOLDER = 'dataset/'
     output_filename = os.path.join(DATASET_FOLDER, 'test_out.csv')
     test = pd.read_csv(os.path.join(DATASET_FOLDER, 'test.csv'))
 
-    signal.signal(signal.SIGINT, lambda sig, frame: signal_handler(sig, frame, test, output_filename)) 
     with Pool(processes=2) as pool:  # Adjust `processes` based on the number of CPU cores
         test['prediction'] = list(tqdm(pool.imap(predictor, test.iterrows()), total=len(test)))
 
