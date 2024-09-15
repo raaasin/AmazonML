@@ -1,36 +1,29 @@
 import os
 from PIL import Image
-import urllib.parse
 import easyocr
 import pandas as pd
 import torch
 import numpy as np
 from tqdm import tqdm
 import warnings
+import requests
 warnings.filterwarnings("ignore")
-
+count = 0
 print(torch.cuda.is_available())
 reader = easyocr.Reader(['en'], gpu=True)
 
-def get_image_filename(image_url):
-    output_folder = 'images'
-    path = urllib.parse.urlsplit(image_url).path
-    filename = os.path.basename(path)
-    return os.path.join(output_folder, filename)
 
-def open_image(file_path):
+def open_image(image_link):
     try:
-        img = Image.open(file_path).convert('RGB')  # Ensure image is in RGB format
-        img = img.resize((img.width // 2, img.height // 2))  # Resize for faster processing
+        img = Image.open(requests.get(image_link, stream=True).raw).convert('RGB')  # Ensure image is in RGB format
         return img
     except Exception as e:
-        print(f"Error opening image {file_path}: {e}")
+        print(f"Error opening image {image_link}: {e}")
         return None
 
 def extract_text_from_image(image):
     try:
-        image_np = np.array(image)  # Convert PIL image to numpy array
-        # Adjust easyocr parameters for faster processing
+        image_np = np.array(image)  
         text = reader.readtext(image_np, detail=0, text_threshold=0.4)
         return ' '.join(text)
     except Exception as e:
@@ -38,13 +31,14 @@ def extract_text_from_image(image):
         return ""
 
 def process_image(row):
-    index = row['index']
+    global count
+    index = count
+    count += 1
     image_link = row['image_link']
     group_id = row['group_id']
     entity_name = row['entity_name']
-    file_path = get_image_filename(image_link)
     try:
-        image = open_image(file_path)
+        image = open_image(image_link)
         if image is not None:
             extracted_text = extract_text_from_image(image)
             return (index, entity_name, group_id, extracted_text)
@@ -55,8 +49,7 @@ def process_image(row):
         return (index, entity_name, group_id, "")
 
 if __name__ == "__main__":
-    DATASET_FOLDER = 'dataset/'
-    test = pd.read_csv(os.path.join(DATASET_FOLDER, 'test.csv'))
+    test = pd.read_csv(os.path.join('small_train.csv'))
     
     results = []
     with tqdm(total=len(test), desc="Processing images") as pbar:
@@ -67,6 +60,6 @@ if __name__ == "__main__":
             pbar.update(1)
     
     results_df = pd.DataFrame(results, columns=['index', 'entity_name', 'group_id', 'prediction'])
-    output_filename = 'test_out.csv'
+    output_filename = 'ocr.csv'
     results_df.to_csv(output_filename, index=False)
     print("Processing complete. Results saved to", output_filename)

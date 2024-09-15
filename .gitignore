@@ -4,3 +4,5 @@ src/
 test/
 prompt.py
 timages/
+saved1/
+__pycache__/
