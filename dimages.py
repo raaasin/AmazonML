@@ -43,8 +43,8 @@ async def download_images(image_urls, output_folder):
 
 def main():
     DATASET_FOLDER = 'dataset/'
-    csv_file = os.path.join(DATASET_FOLDER, 'test.csv')
-    output_folder = 'images'
+    csv_file = os.path.join(DATASET_FOLDER, 'new_train.csv')
+    output_folder = 'timages'
     test = pd.read_csv(csv_file)
     image_urls = test['image_link'].tolist()
     asyncio.run(download_images(image_urls, output_folder))
