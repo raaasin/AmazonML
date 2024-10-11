@@ -1,4 +1,4 @@
-# Ctrl + Alt + Return - Documentation
+# Team: Ctrl + Alt + Return
 
 ## Overview
 
